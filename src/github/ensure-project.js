@@ -43,8 +43,8 @@ function getBootstrapFiles(project) {
  * Ensure a project's branch hierarchy exists and is bootstrapped.
  *
  * Creates (idempotently):
- *   1. {project}-master  — forked from main
- *   2. .github/workflows/ committed onto {project}-master (first time only)
+ *   1. {project}-master  — orphan branch (NO files from main, isolated root)
+ *   2. .github/workflows/ + .github/scripts/ committed onto {project}-master
  *   3. {project}-dev     — forked from {project}-master
  *
  * @param {string} project  - Project identifier (e.g. 'proj-a')
@@ -59,45 +59,14 @@ async function ensureProject(project) {
   const masterBranch = `${project}-master`;
   const devBranch = `${project}-dev`;
 
-  // 1. Ensure {project}-master exists (fork from main)
-  await ensureBranchTracked(masterBranch, 'main');
+  // 1. Ensure {project}-master exists as an orphan branch with bootstrap files
+  const masterIsNew = await ensureOrphanBranch(masterBranch, project);
+  console.log(`[ensure-project] ${masterBranch} ${masterIsNew ? 'created (new orphan)' : 'already exists'}`);
 
-  // 2. Bootstrap workflows + review agent onto {project}-master (idempotent upsert).
-  //    Runs every time so partial bootstraps are always completed.
-  console.log(`[ensure-project] Bootstrapping files onto ${masterBranch}`);
-  const bootstrapFiles = getBootstrapFiles(project);
-
-  for (const file of bootstrapFiles) {
-    let existingSha;
-    try {
-      const existing = await githubApi(`${repo}/contents/${file.path}?ref=${masterBranch}`);
-      existingSha = existing.sha;
-    } catch (_) { /* new file */ }
-
-    const newContent = Buffer.from(file.content).toString('base64');
-
-    // Skip if content is identical (avoid noisy commits)
-    if (existingSha) {
-      const existingContent = (await githubApi(`${repo}/contents/${file.path}?ref=${masterBranch}`)).content
-        .replace(/\n/g, '');
-      if (existingContent === newContent.replace(/\n/g, '')) {
-        continue;
-      }
-    }
-
-    const body = {
-      message: `chore(gitops): bootstrap ${file.path} for project ${project}`,
-      content: newContent,
-      branch: masterBranch,
-    };
-    if (existingSha) body.sha = existingSha;
-
-    await githubApi(`${repo}/contents/${file.path}`, {
-      method: 'PUT',
-      body: JSON.stringify(body),
-    });
+  // 2. If branch already existed, apply any updated bootstrap files (idempotent upsert)
+  if (!masterIsNew) {
+    await upsertBootstrapFiles(masterBranch, project);
   }
-  console.log(`[ensure-project] Bootstrap complete for ${masterBranch}`);
 
   // 3. Ensure {project}-dev exists (fork from {project}-master)
   await ensureBranch(devBranch, masterBranch);
@@ -106,35 +75,124 @@ async function ensureProject(project) {
 }
 
 /**
- * Like ensureBranch but returns true if the branch was newly created,
- * false if it already existed.
+ * Create an orphan branch with all bootstrap files committed atomically.
+ * Uses the low-level Git Data API:
+ *   1. Create a blob for each file
+ *   2. Build a tree from all blobs (no base_tree → clean root)
+ *   3. Create a root commit (parents: [])
+ *   4. Create the branch ref
+ *
+ * Returns true if newly created, false if branch already existed.
  *
  * @param {string} branch
- * @param {string} sourceBranch
- * @returns {Promise<boolean>} true = newly created
+ * @param {string} project
+ * @returns {Promise<boolean>}
  */
-async function ensureBranchTracked(branch, sourceBranch) {
+async function ensureOrphanBranch(branch, project) {
   const repo = repoPath();
 
+  // Check if branch already exists
   try {
     await githubApi(`${repo}/git/ref/heads/${branch}`);
-    return false; // already exists
+    return false;
   } catch (err) {
     if (err.status !== 404) throw err;
+  }
 
-    const sourceRef = await githubApi(`${repo}/git/ref/heads/${sourceBranch}`);
-    const sha = sourceRef.object.sha;
+  const bootstrapFiles = getBootstrapFiles(project);
 
+  // Create a blob for each file
+  const treeEntries = await Promise.all(bootstrapFiles.map(async (file) => {
+    const blob = await githubApi(`${repo}/git/blobs`, {
+      method: 'POST',
+      body: JSON.stringify({
+        content: file.content,
+        encoding: 'utf-8',
+      }),
+    });
+    return {
+      path: file.path,
+      mode: '100644',
+      type: 'blob',
+      sha: blob.sha,
+    };
+  }));
+
+  // Build tree from blobs (no base_tree = clean root with only these files)
+  const tree = await githubApi(`${repo}/git/trees`, {
+    method: 'POST',
+    body: JSON.stringify({ tree: treeEntries }),
+  });
+
+  // Create root commit (no parents)
+  const commit = await githubApi(`${repo}/git/commits`, {
+    method: 'POST',
+    body: JSON.stringify({
+      message: `chore(gitops): bootstrap ${branch}`,
+      tree: tree.sha,
+      parents: [],
+    }),
+  });
+
+  // Create branch ref
+  try {
+    await githubApi(`${repo}/git/refs`, {
+      method: 'POST',
+      body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: commit.sha }),
+    });
+    console.log(`[ensure-project] Bootstrapped ${bootstrapFiles.length} file(s) onto ${branch}`);
+    return true;
+  } catch (createErr) {
+    if (createErr.status !== 422) throw createErr;
+    return false;
+  }
+}
+
+/**
+ * Upsert bootstrap files onto an existing branch using the Contents API.
+ * Skips files whose content is already identical.
+ *
+ * @param {string} branch
+ * @param {string} project
+ */
+async function upsertBootstrapFiles(branch, project) {
+  const repo = repoPath();
+  const bootstrapFiles = getBootstrapFiles(project);
+  let updated = 0;
+
+  for (const file of bootstrapFiles) {
+    let existingSha;
+    let existingContent;
     try {
-      await githubApi(`${repo}/git/refs`, {
-        method: 'POST',
-        body: JSON.stringify({ ref: `refs/heads/${branch}`, sha }),
-      });
-      return true; // newly created
-    } catch (createErr) {
-      if (createErr.status !== 422) throw createErr;
-      return false; // concurrent creation — already exists
+      const existing = await githubApi(`${repo}/contents/${file.path}?ref=${branch}`);
+      existingSha = existing.sha;
+      existingContent = existing.content.replace(/\n/g, '');
+    } catch (_) { /* new file */ }
+
+    const newContent = Buffer.from(file.content).toString('base64');
+
+    if (existingSha && existingContent === newContent.replace(/\n/g, '')) {
+      continue; // identical — skip
     }
+
+    const body = {
+      message: `chore(gitops): update ${file.path} for project ${project}`,
+      content: newContent,
+      branch,
+    };
+    if (existingSha) body.sha = existingSha;
+
+    await githubApi(`${repo}/contents/${file.path}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
+    updated++;
+  }
+
+  if (updated > 0) {
+    console.log(`[ensure-project] Updated ${updated} file(s) on ${branch}`);
+  } else {
+    console.log(`[ensure-project] All bootstrap files up-to-date on ${branch}`);
   }
 }
 

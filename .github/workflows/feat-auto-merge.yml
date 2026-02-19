@@ -22,26 +22,20 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           BRANCH="${{ github.event.workflow_run.head_branch }}"
-
           PR_NUMBER=$(echo '${{ toJson(github.event.workflow_run.pull_requests) }}' \
             | jq -r '.[0].number // empty')
-
           if [ -z "$PR_NUMBER" ]; then
             PR_NUMBER=$(gh pr list \
               --head "$BRANCH" \
-              --base dev \
               --state open \
               --repo "${{ github.repository }}" \
               --json number \
               -q '.[0].number')
           fi
-
           if [ -z "$PR_NUMBER" ]; then
-            echo "No open PR found for branch $BRANCH — skipping"
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-
           echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
           echo "skip=false" >> "$GITHUB_OUTPUT"
 
@@ -52,24 +46,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           SHA="${{ github.event.workflow_run.head_sha }}"
-
-          # Get all check runs except this workflow itself
-          CHECKS=$(gh api \
-            "/repos/${{ github.repository }}/commits/${SHA}/check-runs" \
+          CHECKS=$(gh api "/repos/${{ github.repository }}/commits/${SHA}/check-runs" \
             --jq '[.check_runs[] | select(.name | test("Auto-Merge|Code Review") | not)]')
-
-          TOTAL=$(echo "$CHECKS" | jq 'length')
           FAILED=$(echo "$CHECKS" | jq '[.[] | select(.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out")] | length')
+          [ "$FAILED" -gt 0 ] && echo "passed=false" >> "$GITHUB_OUTPUT" || echo "passed=true" >> "$GITHUB_OUTPUT"
 
-          echo "total=$TOTAL, failed=$FAILED"
-
-          if [ "$FAILED" -gt 0 ]; then
-            echo "passed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "passed=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Check review outcome (label)
+      - name: Check review label
         id: review
         if: steps.pr.outputs.skip != 'true'
         env:
@@ -77,24 +59,18 @@ jobs:
         run: |
           LABELS=$(gh pr view "${{ steps.pr.outputs.number }}" \
             --repo "${{ github.repository }}" \
-            --json labels \
-            -q '.labels[].name')
-
-          if echo "$LABELS" | grep -q "human-review-required"; then
-            echo "approved=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "approved=true" >> "$GITHUB_OUTPUT"
-          fi
+            --json labels -q '.labels[].name')
+          echo "$LABELS" | grep -q "human-review-required" \
+            && echo "approved=false" >> "$GITHUB_OUTPUT" \
+            || echo "approved=true" >> "$GITHUB_OUTPUT"
 
       - name: Check AUTO_MERGE setting
         id: setting
         if: steps.pr.outputs.skip != 'true'
         run: |
-          if [ "${{ vars.AUTO_MERGE }}" = "false" ]; then
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-          fi
+          [ "${{ vars.AUTO_MERGE }}" = "false" ] \
+            && echo "enabled=false" >> "$GITHUB_OUTPUT" \
+            || echo "enabled=true" >> "$GITHUB_OUTPUT"
 
       - name: Check mergeability
         id: mergeable
@@ -106,17 +82,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          PR_NUMBER="${{ steps.pr.outputs.number }}"
           for i in $(seq 1 10); do
-            STATE=$(gh pr view "$PR_NUMBER" \
+            STATE=$(gh pr view "${{ steps.pr.outputs.number }}" \
               --repo "${{ github.repository }}" \
-              --json mergeable \
-              -q '.mergeable')
+              --json mergeable -q '.mergeable')
             if [ "$STATE" != "UNKNOWN" ] && [ -n "$STATE" ]; then
               echo "state=$STATE" >> "$GITHUB_OUTPUT"
               exit 0
             fi
-            echo "Attempt $i/10 — mergeable state: $STATE"
             sleep 10
           done
           echo "state=UNKNOWN" >> "$GITHUB_OUTPUT"
@@ -132,10 +105,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh pr merge "${{ steps.pr.outputs.number }}" \
-            --squash \
-            --delete-branch \
+            --squash --delete-branch \
             --repo "${{ github.repository }}"
-          echo "PR #${{ steps.pr.outputs.number }} merged successfully."
 
       - name: Label PR for human review
         if: |
@@ -149,23 +120,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           PR_NUMBER="${{ steps.pr.outputs.number }}"
-
-          gh pr edit "$PR_NUMBER" \
-            --add-label "human-review-required" \
-            --repo "${{ github.repository }}"
-
-          # Build reason string
           REASONS=()
           [ "${{ steps.ci.outputs.passed }}" = "false" ] && REASONS+=("CI checks failed")
           [ "${{ steps.review.outputs.approved }}" = "false" ] && REASONS+=("code review requested changes")
-          [ "${{ steps.setting.outputs.enabled }}" = "false" ] && REASONS+=("auto-merge is disabled (\`AUTO_MERGE=false\`)")
-          [ "${{ steps.mergeable.outputs.state }}" = "CONFLICTING" ] && REASONS+=("PR has merge conflicts")
-          [ "${{ steps.mergeable.outputs.state }}" = "UNKNOWN" ] && REASONS+=("mergeability could not be determined")
-
+          [ "${{ steps.setting.outputs.enabled }}" = "false" ] && REASONS+=("auto-merge disabled")
+          [ "${{ steps.mergeable.outputs.state }}" = "CONFLICTING" ] && REASONS+=("merge conflicts")
+          [ "${{ steps.mergeable.outputs.state }}" = "UNKNOWN" ] && REASONS+=("mergeability unknown")
           REASON_STR=$(IFS=', '; echo "${REASONS[*]}")
-
-          BODY="$(printf '🔍 **Human review required**\n\n**Reason(s):** %s\n\nPlease review and merge manually once resolved.' "$REASON_STR")"
-
-          gh pr comment "$PR_NUMBER" \
-            --body "$BODY" \
-            --repo "${{ github.repository }}"
+          BODY="$(printf '🔍 **Human review required**\n\n**Reason(s):** %s\n\nPlease review and merge manually.' "$REASON_STR")"
+          gh pr edit "$PR_NUMBER" --add-label "human-review-required" --repo "${{ github.repository }}"
+          gh pr comment "$PR_NUMBER" --body "$BODY" --repo "${{ github.repository }}"

@@ -1,0 +1,49 @@
+name: Push to Branch
+description: Create a feature branch and PR from files already staged on the gitops-service host
+title: "[push] "
+labels: ["gitops-push"]
+body:
+  - type: input
+    id: project
+    attributes:
+      label: Project
+      description: Project identifier (letters, numbers, hyphens, underscores)
+      placeholder: proj-a
+    validations:
+      required: true
+
+  - type: input
+    id: feat_name
+    attributes:
+      label: Feature Name
+      description: Branch will be created as feat/<feature-name>. Use lowercase-kebab-case.
+      placeholder: add-auth-module
+    validations:
+      required: true
+
+  - type: input
+    id: dir
+    attributes:
+      label: Source Directory
+      description: Absolute path on the gitops-service host (must be inside the incoming mount)
+      placeholder: /mnt/incoming/proj-a/add-auth-module
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What does this change do? Used as the PR title and body.
+      placeholder: Add OAuth2 authentication module
+    validations:
+      required: true
+
+  - type: input
+    id: labels
+    attributes:
+      label: Extra Labels (optional)
+      description: Comma-separated list of additional PR labels
+      placeholder: backend, auth
+    validations:
+      required: false

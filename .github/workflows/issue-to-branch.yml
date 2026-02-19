@@ -1,0 +1,107 @@
+name: Issue to Branch
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  push:
+    name: Create feature branch from issue
+    runs-on: ubuntu-latest
+    if: contains(github.event.issue.labels.*.name, 'gitops-push')
+    permissions:
+      issues: write
+
+    steps:
+      - name: Parse issue body
+        id: parse
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.issue.body || '';
+
+            function extract(label) {
+              const re = new RegExp(`###\\s*${label}\\s*\\n+([^\\n#]+)`, 'i');
+              const m = body.match(re);
+              return m ? m[1].trim() : '';
+            }
+
+            const project    = extract('Project');
+            const feat_name  = extract('Feature Name');
+            const dir        = extract('Source Directory');
+            const description = extract('Description');
+            const labels     = extract('Extra Labels \\(optional\\)');
+
+            if (!project)     core.setFailed('Missing field: Project');
+            if (!feat_name)   core.setFailed('Missing field: Feature Name');
+            if (!dir)         core.setFailed('Missing field: Source Directory');
+            if (!description) core.setFailed('Missing field: Description');
+
+            core.setOutput('project',     project);
+            core.setOutput('feat_name',   feat_name);
+            core.setOutput('dir',         dir);
+            core.setOutput('description', description);
+            core.setOutput('labels',      labels);
+
+            core.info(`project=${project} feat_name=${feat_name} dir=${dir}`);
+
+      - name: Call gitops-service /push/sync
+        id: push
+        env:
+          GITOPS_URL: ${{ vars.GITOPS_URL }}
+          GITOPS_API_KEY: ${{ secrets.GITOPS_API_KEY }}
+        run: |
+          PAYLOAD=$(jq -n \
+            --arg project     "${{ steps.parse.outputs.project }}" \
+            --arg feat_name   "${{ steps.parse.outputs.feat_name }}" \
+            --arg dir         "${{ steps.parse.outputs.dir }}" \
+            --arg description "${{ steps.parse.outputs.description }}" \
+            --arg labels      "${{ steps.parse.outputs.labels }}" \
+            --arg source      "github-issue-#${{ github.event.issue.number }}" \
+            '{
+              project:     $project,
+              feat_name:   $feat_name,
+              dir:         $dir,
+              description: $description,
+              labels:      (if $labels != "" then ($labels | split(",") | map(ltrimstr(" ") | rtrimstr(" "))) else [] end),
+              source:      $source
+            }')
+
+          echo "Payload: $PAYLOAD"
+
+          RESPONSE=$(curl -sf \
+            -X POST "${GITOPS_URL}/push/sync" \
+            -H "Content-Type: application/json" \
+            -H "x-api-key: ${GITOPS_API_KEY}" \
+            -d "$PAYLOAD")
+
+          echo "Response: $RESPONSE"
+
+          PR_URL=$(echo "$RESPONSE" | jq -r '.pr_url')
+          PR_NUMBER=$(echo "$RESPONSE" | jq -r '.pr_number')
+          BRANCH=$(echo "$RESPONSE" | jq -r '.branch')
+
+          echo "pr_url=$PR_URL"       >> "$GITHUB_OUTPUT"
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "branch=$BRANCH"       >> "$GITHUB_OUTPUT"
+
+      - name: Comment on issue with PR link
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue comment "${{ github.event.issue.number }}" \
+            --repo "${{ github.repository }}" \
+            --body "$(printf '✅ **Branch and PR created**\n\n- **Branch:** `%s`\n- **PR:** %s\n\n_Triggered by this issue via gitops-service._' \
+              "${{ steps.push.outputs.branch }}" \
+              "${{ steps.push.outputs.pr_url }}")"
+
+      - name: Comment on issue on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue comment "${{ github.event.issue.number }}" \
+            --repo "${{ github.repository }}" \
+            --body "$(printf '❌ **gitops-service push failed**\n\nCheck the [workflow run](%s) for details.' \
+              "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}")"

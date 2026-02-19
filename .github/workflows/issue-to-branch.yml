@@ -2,16 +2,13 @@ name: Issue to Branch
 
 on:
   issues:
-    types: [opened, labeled]
+    types: [opened]
 
 jobs:
   push:
     name: Create feature branch from issue
     runs-on: ubuntu-latest
-    if: |
-      contains(github.event.issue.labels.*.name, 'gitops-push') &&
-      (github.event.action == 'opened' ||
-       (github.event.action == 'labeled' && github.event.label.name == 'gitops-push'))
+    if: startsWith(github.event.issue.title, '[push]')
     permissions:
       issues: write
 

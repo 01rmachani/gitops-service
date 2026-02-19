@@ -1,0 +1,79 @@
+name: Code Review Agent
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+jobs:
+  review:
+    name: Run code review agent
+    runs-on: ubuntu-latest
+    if: |
+      startsWith(github.event.workflow_run.head_branch, 'feat/') &&
+      github.event.workflow_run.conclusion != 'cancelled'
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Get PR number
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BRANCH="${{ github.event.workflow_run.head_branch }}"
+          PR_NUMBER=$(echo '${{ toJson(github.event.workflow_run.pull_requests) }}' \
+            | jq -r '.[0].number // empty')
+          if [ -z "$PR_NUMBER" ]; then
+            PR_NUMBER=$(gh pr list \
+              --head "$BRANCH" \
+              --state open \
+              --repo "${{ github.repository }}" \
+              --json number \
+              -q '.[0].number')
+          fi
+          if [ -z "$PR_NUMBER" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Run code review agent
+        if: steps.pr.outputs.skip != 'true'
+        id: review
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          GH_REPO_FULL: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          REVIEW_MODEL: ${{ vars.REVIEW_MODEL }}
+        run: node .github/scripts/review.js
+
+      - name: Add human-review-required label on REQUEST_CHANGES
+        if: steps.pr.outputs.skip != 'true' && steps.review.outputs.review_outcome == 'REQUEST_CHANGES'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr edit "${{ steps.pr.outputs.number }}" \
+            --add-label "human-review-required" \
+            --repo "${{ github.repository }}"
+
+      - name: Remove human-review-required label on APPROVE
+        if: steps.pr.outputs.skip != 'true' && steps.review.outputs.review_outcome == 'APPROVE'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr edit "${{ steps.pr.outputs.number }}" \
+            --remove-label "human-review-required" \
+            --repo "${{ github.repository }}" || true

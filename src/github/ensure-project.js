@@ -5,27 +5,38 @@ const { ensureBranch } = require('./ensure-branch');
 
 const PROJECTS_DIR = path.resolve(__dirname, '../../projects');
 const DEFAULT_WORKFLOWS_DIR = path.join(PROJECTS_DIR, '_default', 'workflows');
+const AGENTS_DIR = path.resolve(__dirname, '../../agents/code-review');
 
 /**
- * Return the workflow files for a project.
- * Uses projects/<project>/workflows/ if it exists, otherwise falls back to
- * projects/_default/workflows/.
+ * Return all files to bootstrap onto {project}-master:
+ *   - .github/workflows/*.yml  (project-specific or _default)
+ *   - .github/scripts/review.js  (code review agent — bundled, no external dep)
+ *   - .github/scripts/prompt.md  (review prompt)
  *
  * @param {string} project
  * @returns {Array<{path: string, content: string}>}
  */
-function getWorkflowFiles(project) {
+function getBootstrapFiles(project) {
   const projectWorkflowsDir = path.join(PROJECTS_DIR, project, 'workflows');
-  const dir = fs.existsSync(projectWorkflowsDir)
+  const workflowsDir = fs.existsSync(projectWorkflowsDir)
     ? projectWorkflowsDir
     : DEFAULT_WORKFLOWS_DIR;
 
-  return fs.readdirSync(dir)
+  const workflowFiles = fs.readdirSync(workflowsDir)
     .filter(f => f.endsWith('.yml') || f.endsWith('.yaml'))
     .map(f => ({
       path: `.github/workflows/${f}`,
-      content: fs.readFileSync(path.join(dir, f), 'utf8'),
+      content: fs.readFileSync(path.join(workflowsDir, f), 'utf8'),
     }));
+
+  const agentFiles = ['review.js', 'prompt.md']
+    .filter(f => fs.existsSync(path.join(AGENTS_DIR, f)))
+    .map(f => ({
+      path: `.github/scripts/${f}`,
+      content: fs.readFileSync(path.join(AGENTS_DIR, f), 'utf8'),
+    }));
+
+  return [...workflowFiles, ...agentFiles];
 }
 
 /**
@@ -49,25 +60,44 @@ async function ensureProject(project) {
   const devBranch = `${project}-dev`;
 
   // 1. Ensure {project}-master exists (fork from main)
-  const masterIsNew = await ensureBranchTracked(masterBranch, 'main');
+  await ensureBranchTracked(masterBranch, 'main');
 
-  // 2. Bootstrap workflows onto {project}-master (only if branch was just created)
-  if (masterIsNew) {
-    console.log(`[ensure-project] Bootstrapping workflows onto ${masterBranch}`);
-    const workflowFiles = getWorkflowFiles(project);
+  // 2. Bootstrap workflows + review agent onto {project}-master (idempotent upsert).
+  //    Runs every time so partial bootstraps are always completed.
+  console.log(`[ensure-project] Bootstrapping files onto ${masterBranch}`);
+  const bootstrapFiles = getBootstrapFiles(project);
 
-    for (const file of workflowFiles) {
-      await githubApi(`${repo}/contents/${file.path}`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          message: `chore(gitops): bootstrap ${file.path} for project ${project}`,
-          content: Buffer.from(file.content).toString('base64'),
-          branch: masterBranch,
-        }),
-      });
+  for (const file of bootstrapFiles) {
+    let existingSha;
+    try {
+      const existing = await githubApi(`${repo}/contents/${file.path}?ref=${masterBranch}`);
+      existingSha = existing.sha;
+    } catch (_) { /* new file */ }
+
+    const newContent = Buffer.from(file.content).toString('base64');
+
+    // Skip if content is identical (avoid noisy commits)
+    if (existingSha) {
+      const existingContent = (await githubApi(`${repo}/contents/${file.path}?ref=${masterBranch}`)).content
+        .replace(/\n/g, '');
+      if (existingContent === newContent.replace(/\n/g, '')) {
+        continue;
+      }
     }
-    console.log(`[ensure-project] Bootstrapped ${workflowFiles.length} workflow(s) onto ${masterBranch}`);
+
+    const body = {
+      message: `chore(gitops): bootstrap ${file.path} for project ${project}`,
+      content: newContent,
+      branch: masterBranch,
+    };
+    if (existingSha) body.sha = existingSha;
+
+    await githubApi(`${repo}/contents/${file.path}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
   }
+  console.log(`[ensure-project] Bootstrap complete for ${masterBranch}`);
 
   // 3. Ensure {project}-dev exists (fork from {project}-master)
   await ensureBranch(devBranch, masterBranch);

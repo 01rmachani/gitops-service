@@ -164,10 +164,8 @@ jobs:
 
           REASON_STR=$(IFS=', '; echo "${REASONS[*]}")
 
+          BODY="$(printf '🔍 **Human review required**\n\n**Reason(s):** %s\n\nPlease review and merge manually once resolved.' "$REASON_STR")"
+
           gh pr comment "$PR_NUMBER" \
-            --body "🔍 **Human review required**
-
-**Reason(s):** ${REASON_STR}
-
-Please review and merge manually once resolved." \
+            --body "$BODY" \
             --repo "${{ github.repository }}"

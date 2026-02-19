@@ -10,6 +10,13 @@ const app = express();
 
 app.use(helmet());
 app.use(express.json({ limit: '10mb' }));
+app.use(express.text({ type: 'text/plain', limit: '10mb' }));
+app.use((req, res, next) => {
+  if (typeof req.body === 'string') {
+    try { req.body = JSON.parse(req.body); } catch { /* leave as-is */ }
+  }
+  next();
+});
 
 // GET /ping - health check
 app.get('/ping', (req, res) => {

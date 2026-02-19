@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  test:
+    name: Run tests
+    runs-on: ubuntu-latest
+    if: startsWith(github.event.pull_request.head.ref, 'feat/')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies (if package.json exists)
+        run: |
+          if [ -f package.json ]; then
+            npm ci
+          else
+            echo "No package.json — skipping install"
+          fi
+
+      - name: Run tests (if test script exists)
+        run: |
+          if [ -f package.json ] && node -e "require('./package.json').scripts.test" 2>/dev/null; then
+            npm test
+          else
+            echo "No test script defined — placeholder pass"
+          fi

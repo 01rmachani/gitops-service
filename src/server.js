@@ -29,45 +29,40 @@ app.use(auth);
 /**
  * POST /push
  *
- * Accepts code files from an external service, creates a feat/<uuid> branch
- * in the target GitHub repo, pushes the files, and opens a PR to dev.
+ * Accepts code files from an external service, bootstraps the project branch
+ * hierarchy if needed, creates a feat/<feat_name|uuid> branch off {project}-dev,
+ * pushes the files, and opens a PR.
  *
  * Body:
  *   {
- *     description: string,           // PR title / description
- *     dir: string,                   // absolute path to directory accessible by this service
- *     base_branch?: string,          // default: process.env.BASE_BRANCH || 'dev'
- *     labels?: string[],             // extra PR labels (always includes 'automated')
+ *     project: string,               // required — project identifier (e.g. 'proj-a')
+ *     dir: string,                   // required — absolute path to directory accessible by this service
+ *     description?: string,          // PR title / description
+ *     feat_name?: string,            // optional branch suffix; defaults to UUID
+ *     labels?: string[],             // extra PR labels (always includes 'automated', project name)
  *     source?: string                // identifier of the calling service
  *   }
  *
- * Response:
- *   { feat_id, branch, pr_number, pr_url }
+ * Response: 202 { ok, message }
  */
 app.post('/push', async (req, res) => {
-  const { description, dir, base_branch, labels, source } = req.body;
+  const { project, dir, description, feat_name, labels, source } = req.body;
 
+  if (!project || typeof project !== 'string') {
+    return res.status(400).json({ error: 'project is required and must be a string' });
+  }
   if (!dir || typeof dir !== 'string') {
     return res.status(400).json({ error: 'dir is required and must be a string (absolute path to directory)' });
   }
 
-  // Respond with 202 immediately so the caller isn't blocked waiting for
-  // branch creation + file pushes + PR open (can take several seconds)
   res.status(202).json({ ok: true, message: 'Push queued' });
 
-  // Enqueue the actual work — concurrency-capped, non-blocking to HTTP layer
   enqueue(async () => {
-    const result = await createFeatBranch({
-      description,
-      dir,
-      base_branch: base_branch || process.env.BASE_BRANCH || 'dev',
-      labels: labels || [],
-      source,
-    });
-    console.log(`[push] PR #${result.pr_number} created: ${result.pr_url}`);
+    const result = await createFeatBranch({ project, dir, description, feat_name, labels: labels || [], source });
+    console.log(`[push] ${result.project} PR #${result.pr_number} created: ${result.pr_url}`);
     return result;
   }).catch(err => {
-    console.error(`[push] Failed to create feat branch: ${err.message}`);
+    console.error(`[push] Failed: ${err.message}`);
   });
 });
 
@@ -76,23 +71,22 @@ app.post('/push', async (req, res) => {
  *
  * Same as POST /push but waits for branch creation and returns the full result.
  * Use when the caller needs the PR URL immediately.
+ *
+ * Response: { feat_id, branch, project, dev_branch, pr_number, pr_url }
  */
 app.post('/push/sync', async (req, res) => {
-  const { description, dir, base_branch, labels, source } = req.body;
+  const { project, dir, description, feat_name, labels, source } = req.body;
 
+  if (!project || typeof project !== 'string') {
+    return res.status(400).json({ error: 'project is required and must be a string' });
+  }
   if (!dir || typeof dir !== 'string') {
     return res.status(400).json({ error: 'dir is required and must be a string (absolute path to directory)' });
   }
 
   try {
     const result = await enqueue(() =>
-      createFeatBranch({
-        description,
-        dir,
-        base_branch: base_branch || process.env.BASE_BRANCH || 'dev',
-        labels: labels || [],
-        source,
-      })
+      createFeatBranch({ project, dir, description, feat_name, labels: labels || [], source })
     );
     res.json(result);
   } catch (err) {

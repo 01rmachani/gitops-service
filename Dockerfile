@@ -18,6 +18,7 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY src/       ./src/
 COPY agents/    ./agents/
+COPY projects/  ./projects/
 COPY package.json ./
 
 # ── Stage 3: runtime ──────────────────────────────────────────────────────────

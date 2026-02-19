@@ -27,11 +27,27 @@ describe('push-queue', () => {
 });
 
 describe('create-feat-branch input validation', () => {
+  it('rejects missing project', async () => {
+    const { createFeatBranch } = require('../src/github/create-feat-branch');
+    await assert.rejects(
+      () => createFeatBranch({ dir: '/tmp' }),
+      /project is required/
+    );
+  });
+
   it('rejects missing dir', async () => {
     const { createFeatBranch } = require('../src/github/create-feat-branch');
     await assert.rejects(
-      () => createFeatBranch({ description: 'test' }),
+      () => createFeatBranch({ project: 'proj-a' }),
       /dir is required/
+    );
+  });
+
+  it('rejects invalid project name', async () => {
+    const { ensureProject } = require('../src/github/ensure-project');
+    await assert.rejects(
+      () => ensureProject('proj a/bad!'),
+      /Invalid project name/
     );
   });
 });

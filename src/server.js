@@ -4,6 +4,7 @@ const express = require('express');
 const helmet = require('helmet');
 const { auth } = require('./middleware/auth');
 const { createFeatBranch } = require('./github/create-feat-branch');
+const { ensureProject } = require('./github/ensure-project');
 const { enqueue, stats } = require('./queue/push-queue');
 
 const app = express();
@@ -92,6 +93,35 @@ app.post('/push/sync', async (req, res) => {
   } catch (err) {
     console.error(`[push/sync] Error: ${err.message}`);
     res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /projects/:project/bootstrap
+ *
+ * Explicitly (re-)bootstrap a project's branch hierarchy and workflow files.
+ * Useful when:
+ *   - Adding a new project before the first /push
+ *   - Updating workflow templates after changing projects/_default/workflows/
+ *   - Recovering from a partial bootstrap
+ *
+ * Response: { project, master_branch, dev_branch, files_bootstrapped }
+ */
+app.post('/projects/:project/bootstrap', async (req, res) => {
+  const { project } = req.params;
+  try {
+    const result = await ensureProject(project);
+    console.log(`[bootstrap] ${project} → ${result.masterBranch}, ${result.devBranch}`);
+    res.json({
+      ok: true,
+      project,
+      master_branch: result.masterBranch,
+      dev_branch: result.devBranch,
+    });
+  } catch (err) {
+    console.error(`[bootstrap] ${project}: ${err.message}`);
+    res.status(err.message.includes('Invalid project') ? 400 : 500)
+      .json({ error: err.message });
   }
 });
 

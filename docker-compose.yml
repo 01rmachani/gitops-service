@@ -8,7 +8,7 @@ services:
     container_name: gitops-service
     restart: unless-stopped
     ports:
-      - "${PORT:-3000}:3000"
+      - "${PORT:-3000}:${PORT:-3000}"
     env_file:
       - .env
     volumes:
@@ -18,7 +18,7 @@ services:
       #          → maps to host path defined by INCOMING_DIR env var.
       - ${INCOMING_DIR:-/tmp/gitops-incoming}:/mnt/incoming:ro
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/ping"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:${PORT:-3000}/ping || exit 1"]
       interval: 30s
       timeout: 5s
       start_period: 10s

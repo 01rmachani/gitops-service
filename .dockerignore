@@ -1,0 +1,10 @@
+node_modules/
+.env
+.git/
+.github/
+tests/
+*.log
+.pre-commit-config.yaml
+README.md
+docker-compose.yml
+.dockerignore

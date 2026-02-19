@@ -28,15 +28,15 @@ Waits for branch creation and returns the PR URL.
 ```json
 {
   "description": "Add user authentication module",
-  "files": [
-    { "path": "src/auth/index.js", "content": "..." },
-    { "path": "src/auth/middleware.js", "content": "..." }
-  ],
+  "dir": "/mnt/shared/my-service/output",
   "base_branch": "dev",
   "labels": ["backend"],
   "source": "my-external-service"
 }
 ```
+
+`dir` must be an **absolute path** to a directory accessible by the gitops-service process.
+All files and subdirectories inside `dir` are pushed recursively. The directory itself is not created in the repo — only its contents, preserving relative paths.
 
 **Response (`/push/sync`):**
 ```json

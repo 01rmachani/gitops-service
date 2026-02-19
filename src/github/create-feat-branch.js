@@ -1,20 +1,24 @@
 const { v4: uuidv4 } = require('uuid');
 const { githubApi, repoPath } = require('./api');
 const { ensureBranch } = require('./ensure-branch');
+const { readDirFiles } = require('./read-dir-files');
 
 /**
  * Create a feat/<uuid> branch, push files, open a PR to base_branch.
  *
  * @param {object} opts
  * @param {string}   opts.description              - PR title / description
- * @param {Array<{path:string, content:string}>} opts.files - Files to push (UTF-8 content)
+ * @param {string}   opts.dir                      - Absolute path to directory; its contents are pushed
  * @param {string}   [opts.base_branch='dev']      - Integration branch to PR into
  * @param {string[]} [opts.labels=[]]              - Extra labels beyond 'automated'
  * @param {string}   [opts.source]                 - Identifier of calling service
  * @returns {Promise<{feat_id, branch, pr_number, pr_url}>}
  */
-async function createFeatBranch({ description, files = [], base_branch = 'dev', labels = [], source }) {
-  if (!files.length) throw new Error('No files provided');
+async function createFeatBranch({ description, dir, base_branch = 'dev', labels = [], source }) {
+  if (!dir) throw new Error('dir is required');
+
+  const files = readDirFiles(dir);
+  if (!files.length) throw new Error(`No files found in directory: ${dir}`);
 
   const repo = repoPath();
   const featId = uuidv4();
@@ -64,7 +68,8 @@ async function createFeatBranch({ description, files = [], base_branch = 'dev', 
     description || 'Automated push from external service',
     source ? `\n**Source:** ${source}` : '',
     `\n**Feat ID:** \`${featId}\``,
-    `\n**Files changed:** ${files.map(f => `\`${f.path}\``).join(', ')}`,
+    `\n**Directory:** \`${dir}\``,
+    `\n**Files pushed:** ${files.map(f => `\`${f.path}\``).join(', ')}`,
   ].filter(Boolean).join('');
 
   // Open PR

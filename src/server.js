@@ -28,9 +28,7 @@ app.use(auth);
  * Body:
  *   {
  *     description: string,           // PR title / description
- *     files: [                       // required, at least one file
- *       { path: string, content: string }  // content is UTF-8 string
- *     ],
+ *     dir: string,                   // absolute path to directory accessible by this service
  *     base_branch?: string,          // default: process.env.BASE_BRANCH || 'dev'
  *     labels?: string[],             // extra PR labels (always includes 'automated')
  *     source?: string                // identifier of the calling service
@@ -40,16 +38,10 @@ app.use(auth);
  *   { feat_id, branch, pr_number, pr_url }
  */
 app.post('/push', async (req, res) => {
-  const { description, files, base_branch, labels, source } = req.body;
+  const { description, dir, base_branch, labels, source } = req.body;
 
-  if (!Array.isArray(files) || files.length === 0) {
-    return res.status(400).json({ error: 'files must be a non-empty array of { path, content }' });
-  }
-
-  for (const f of files) {
-    if (!f.path || typeof f.content !== 'string') {
-      return res.status(400).json({ error: 'Each file must have { path: string, content: string }' });
-    }
+  if (!dir || typeof dir !== 'string') {
+    return res.status(400).json({ error: 'dir is required and must be a string (absolute path to directory)' });
   }
 
   // Respond with 202 immediately so the caller isn't blocked waiting for
@@ -60,7 +52,7 @@ app.post('/push', async (req, res) => {
   enqueue(async () => {
     const result = await createFeatBranch({
       description,
-      files,
+      dir,
       base_branch: base_branch || process.env.BASE_BRANCH || 'dev',
       labels: labels || [],
       source,
@@ -79,23 +71,17 @@ app.post('/push', async (req, res) => {
  * Use when the caller needs the PR URL immediately.
  */
 app.post('/push/sync', async (req, res) => {
-  const { description, files, base_branch, labels, source } = req.body;
+  const { description, dir, base_branch, labels, source } = req.body;
 
-  if (!Array.isArray(files) || files.length === 0) {
-    return res.status(400).json({ error: 'files must be a non-empty array of { path, content }' });
-  }
-
-  for (const f of files) {
-    if (!f.path || typeof f.content !== 'string') {
-      return res.status(400).json({ error: 'Each file must have { path: string, content: string }' });
-    }
+  if (!dir || typeof dir !== 'string') {
+    return res.status(400).json({ error: 'dir is required and must be a string (absolute path to directory)' });
   }
 
   try {
     const result = await enqueue(() =>
       createFeatBranch({
         description,
-        files,
+        dir,
         base_branch: base_branch || process.env.BASE_BRANCH || 'dev',
         labels: labels || [],
         source,

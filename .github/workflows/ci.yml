@@ -16,7 +16,7 @@ jobs:
     if: startsWith(github.event.pull_request.head.ref, 'feat/')
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-python@v5
         with:
@@ -35,7 +35,7 @@ jobs:
     if: startsWith(github.event.pull_request.head.ref, 'feat/')
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-node@v4
         with:

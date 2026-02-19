@@ -1,5 +1,7 @@
 const { GH_TOKEN, GH_OWNER, GH_REPO } = process.env;
 
+const GH_API_TIMEOUT_MS = parseInt(process.env.GH_API_TIMEOUT_MS || '30000', 10);
+
 /**
  * GitHub REST API helper with authentication.
  * @param {string} endpoint - e.g. '/repos/owner/repo/...'
@@ -11,16 +13,25 @@ async function githubApi(endpoint, options = {}) {
     ? endpoint
     : `https://api.github.com${endpoint}`;
 
-  const res = await fetch(url, {
-    ...options,
-    headers: {
-      Authorization: `Bearer ${GH_TOKEN}`,
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28',
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), GH_API_TIMEOUT_MS);
+
+  let res;
+  try {
+    res = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        Authorization: `Bearer ${GH_TOKEN}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        'Content-Type': 'application/json',
+        ...options.headers,
+      },
+    });
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (!res.ok) {
     const text = await res.text();

@@ -71,7 +71,7 @@ Waits for branch + PR creation and returns the full result.
 | Field | Required | Description |
 |---|---|---|
 | `project` | ✅ | Project identifier — letters, numbers, hyphens, underscores |
-| `dir` | ✅ | Absolute path to directory (accessible by the service). Contents pushed recursively; `.git/` and `node_modules/` skipped |
+| `dir` | ✅ | Absolute path to directory **inside `INCOMING_DIR`** (path traversal protection enforced). Contents pushed recursively; `.git/` and `node_modules/` skipped |
 | `description` | — | PR title and body description |
 | `feat_name` | — | Branch suffix: `feat/<feat_name>`. Defaults to UUID if omitted. Re-pushing with the same name updates files on the existing branch |
 | `labels` | — | Extra PR labels. `automated` and `{project}` are always added |
@@ -194,4 +194,5 @@ npm run dev      # development (nodemon)
 | `GH_REPO` | ✅ | — | Target repository name |
 | `PUSH_QUEUE_CONCURRENCY` | — | `5` | Max parallel push operations |
 | `PORT` | — | `3000` | Server port |
-| `INCOMING_DIR` | — | `/tmp/gitops-incoming` | Host directory mounted into container at `/mnt/incoming` |
+| `INCOMING_DIR` | — | `/mnt/incoming` | Allowed root for `dir` values. Any `dir` outside this path is rejected (path traversal protection) |
+| `GH_API_TIMEOUT_MS` | — | `30000` | Timeout in ms for GitHub API calls |

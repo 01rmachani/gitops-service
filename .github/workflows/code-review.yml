@@ -5,6 +5,10 @@ on:
     workflows: ["CI"]
     types: [completed]
 
+concurrency:
+  group: code-review-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
+
 jobs:
   review:
     name: Run code review agent
@@ -37,7 +41,6 @@ jobs:
           if [ -z "$PR_NUMBER" ]; then
             PR_NUMBER=$(gh pr list \
               --head "$BRANCH" \
-              --base dev \
               --state open \
               --repo "${{ github.repository }}" \
               --json number \

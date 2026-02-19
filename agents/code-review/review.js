@@ -31,6 +31,7 @@ const {
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const GH_API = 'https://api.github.com';
+const MAX_DIFF_CHARS = 24000;
 
 function ghHeaders() {
   return {
@@ -58,8 +59,15 @@ async function fetchPrMeta() {
 }
 
 async function callLlm(systemPrompt, diff) {
-  const userMessage = diff.trim()
-    ? `Please review the following pull request diff:\n\n\`\`\`diff\n${diff}\n\`\`\``
+  let truncated = diff;
+  let truncationNote = '';
+  if (diff.length > MAX_DIFF_CHARS) {
+    truncated = diff.slice(0, MAX_DIFF_CHARS);
+    truncationNote = `\n\n[Diff truncated at ${MAX_DIFF_CHARS} chars — ${diff.length - MAX_DIFF_CHARS} chars omitted]`;
+  }
+
+  const userMessage = truncated.trim()
+    ? `Please review the following pull request diff:\n\n\`\`\`diff\n${truncated}${truncationNote}\n\`\`\``
     : 'The diff is empty — no code changes detected.';
 
   const res = await fetch(OPENROUTER_URL, {
@@ -72,7 +80,7 @@ async function callLlm(systemPrompt, diff) {
     },
     body: JSON.stringify({
       model: REVIEW_MODEL,
-      max_tokens: 1024,
+      max_tokens: 2048,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userMessage },
@@ -138,8 +146,6 @@ async function postComment(body) {
 function setOutput(key, value) {
   if (GITHUB_OUTPUT) {
     fs.appendFileSync(GITHUB_OUTPUT, `${key}=${value}\n`);
-  } else {
-    console.log(`::set-output name=${key}::${value}`);
   }
 }
 

@@ -5,11 +5,17 @@ on:
     workflows: ["Code Review Agent"]
     types: [completed]
 
+concurrency:
+  group: auto-merge-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
+
 jobs:
   auto-merge:
     name: Auto-merge or request human review
     runs-on: ubuntu-latest
-    if: startsWith(github.event.workflow_run.head_branch, 'feat/')
+    if: |
+      startsWith(github.event.workflow_run.head_branch, 'feat/') &&
+      github.event.workflow_run.conclusion == 'success'
     permissions:
       contents: write
       pull-requests: write
@@ -29,7 +35,6 @@ jobs:
           if [ -z "$PR_NUMBER" ]; then
             PR_NUMBER=$(gh pr list \
               --head "$BRANCH" \
-              --base dev \
               --state open \
               --repo "${{ github.repository }}" \
               --json number \

@@ -2,13 +2,17 @@ name: Issue to Branch
 
 on:
   issues:
-    types: [opened]
+    types: [opened, labeled]
+
+concurrency:
+  group: issue-to-branch-${{ github.event.issue.number }}
+  cancel-in-progress: false
 
 jobs:
   push:
     name: Create feature branch from issue
     runs-on: ubuntu-latest
-    if: startsWith(github.event.issue.title, '[push]')
+    if: contains(github.event.issue.labels.*.name, 'gitops-push')
     permissions:
       issues: write
 

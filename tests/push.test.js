@@ -1,7 +1,26 @@
-const { describe, it } = require('node:test');
+const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
+const path = require('path');
 
 const { enqueue, stats } = require('../src/queue/push-queue');
+
+// ---------------------------------------------------------------------------
+// validateDir — inline the pure function so we can test it without booting
+// the full server (which calls process.exit on missing env vars).
+// ---------------------------------------------------------------------------
+function makeValidateDir(incomingDir) {
+  const base = path.resolve(incomingDir);
+  return function validateDir(dir) {
+    const resolved = path.resolve(dir);
+    if (!resolved.startsWith(base + path.sep) && resolved !== base) {
+      throw Object.assign(
+        new Error(`dir must be inside ${base}`),
+        { status: 400 }
+      );
+    }
+    return resolved;
+  };
+}
 
 const tick = () => new Promise(r => setImmediate(r));
 
@@ -66,6 +85,48 @@ describe('readDirFiles', () => {
     assert.throws(
       () => readDirFiles('/etc/hostname'),
       /Path is not a directory/
+    );
+  });
+});
+
+describe('validateDir (path traversal protection)', () => {
+  const validateDir = makeValidateDir('/mnt/incoming');
+
+  it('accepts a valid subdirectory', () => {
+    const result = validateDir('/mnt/incoming/proj-a/output');
+    assert.equal(result, '/mnt/incoming/proj-a/output');
+  });
+
+  it('accepts the base INCOMING_DIR itself', () => {
+    const result = validateDir('/mnt/incoming');
+    assert.equal(result, '/mnt/incoming');
+  });
+
+  it('rejects a path outside INCOMING_DIR (root)', () => {
+    assert.throws(
+      () => validateDir('/'),
+      /dir must be inside/
+    );
+  });
+
+  it('rejects a sibling directory attack', () => {
+    assert.throws(
+      () => validateDir('/mnt/other'),
+      /dir must be inside/
+    );
+  });
+
+  it('rejects traversal via .. segments', () => {
+    assert.throws(
+      () => validateDir('/mnt/incoming/../../../etc/passwd'),
+      /dir must be inside/
+    );
+  });
+
+  it('rejects a path that is a prefix but not a child (e.g. /mnt/incoming-evil)', () => {
+    assert.throws(
+      () => validateDir('/mnt/incoming-evil/proj'),
+      /dir must be inside/
     );
   });
 });

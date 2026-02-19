@@ -19,6 +19,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - uses: actions/setup-node@v4
         with:
@@ -30,29 +32,22 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           BRANCH="${{ github.event.workflow_run.head_branch }}"
-
           PR_NUMBER=$(echo '${{ toJson(github.event.workflow_run.pull_requests) }}' \
             | jq -r '.[0].number // empty')
-
           if [ -z "$PR_NUMBER" ]; then
             PR_NUMBER=$(gh pr list \
               --head "$BRANCH" \
-              --base dev \
               --state open \
               --repo "${{ github.repository }}" \
               --json number \
               -q '.[0].number')
           fi
-
           if [ -z "$PR_NUMBER" ]; then
-            echo "No open PR found for branch $BRANCH — skipping review"
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-
           echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
           echo "skip=false" >> "$GITHUB_OUTPUT"
-          echo "Found PR #$PR_NUMBER"
 
       - name: Run code review agent
         if: steps.pr.outputs.skip != 'true'
@@ -63,9 +58,9 @@ jobs:
           GH_REPO_FULL: ${{ github.repository }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
           REVIEW_MODEL: ${{ vars.REVIEW_MODEL }}
-        run: node agents/code-review/review.js
+        run: node .github/scripts/review.js
 
-      - name: Add REQUEST_CHANGES label
+      - name: Add human-review-required label on REQUEST_CHANGES
         if: steps.pr.outputs.skip != 'true' && steps.review.outputs.review_outcome == 'REQUEST_CHANGES'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -81,10 +76,4 @@ jobs:
         run: |
           gh pr edit "${{ steps.pr.outputs.number }}" \
             --remove-label "human-review-required" \
-            --repo "${{ github.repository }}" \
-          || true
-
-      - name: Emit review outcome
-        if: steps.pr.outputs.skip != 'true'
-        run: |
-          echo "Review outcome: ${{ steps.review.outputs.review_outcome }}"
+            --repo "${{ github.repository }}" || true

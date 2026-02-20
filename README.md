@@ -194,11 +194,28 @@ To customise a project's CI: add `projects/<project>/workflows/ci.yml` to `main`
 
 ## Setup
 
+### Quick install (one command)
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/01rmachani/gitops-service/main/install.sh)
+```
+
+This script:
+- Clones the repo (or pulls latest if the directory already exists)
+- Creates `.env` from `.env.example` and opens it for editing
+- Runs `docker compose up -d --build`
+- Polls `/ping` until the service is healthy and prints next steps
+
+> **Requires:** `git`, `docker` (with Compose v2)
+
+---
+
+### Manual setup
+
 ### 1. Clone and install
 ```bash
 git clone https://github.com/01rmachani/gitops-service
 cd gitops-service
-npm install
 cp .env.example .env
 # Fill in .env
 ```

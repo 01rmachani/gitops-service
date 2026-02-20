@@ -12,6 +12,7 @@ jobs:
   push:
     name: Create feature branch from issue
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: contains(github.event.issue.labels.*.name, 'gitops-push')
     permissions:
       issues: write

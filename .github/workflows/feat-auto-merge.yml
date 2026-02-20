@@ -13,6 +13,7 @@ jobs:
   auto-merge:
     name: Auto-merge or request human review
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     if: |
       startsWith(github.event.workflow_run.head_branch, 'feat/') &&
       github.event.workflow_run.conclusion == 'success'

@@ -46,15 +46,27 @@ POST /push/sync
 ---
 
 ### `GET /ping`
-Health check. Returns queue stats.
+Health check. Returns service metadata and queue stats.
+
+```json
+{
+  "ok": true,
+  "version": "1.0.0",
+  "node": "v20.x.x",
+  "uptime_s": 3600,
+  "queue": { "active": 0, "queued": 0, "concurrency": 5 }
+}
+```
 
 ---
 
 ### `POST /push` — async (202)
 Fire-and-forget. Returns immediately; work happens in background.
+Returns **503** if the queue is full (depth ≥ `PUSH_QUEUE_MAX_DEPTH`).
 
 ### `POST /push/sync` — synchronous
 Waits for branch + PR creation and returns the full result.
+Returns **503** if the queue is full (depth ≥ `PUSH_QUEUE_MAX_DEPTH`).
 
 **Body:**
 ```json
@@ -121,11 +133,11 @@ Workflows are bootstrapped onto `{project}-master` and trigger on PRs from `feat
 | Workflow | Trigger | Purpose |
 |---|---|---|
 | `ci.yml` | PR opened/updated | Runs project tests |
-| `code-review.yml` | After CI completes (`conclusion == 'success'`) | LLM reviews diff via `.github/scripts/review.js`, posts comment |
+| `code-review.yml` | After CI completes (`conclusion == 'success'`) | LLM reviews diff via `.github/scripts/review.js`, posts comment. LLM and GitHub API calls have configurable timeouts. |
 | `feat-auto-merge.yml` | After code review completes (`conclusion == 'success'`) | Squash-merges if all gates pass, else labels PR |
 | `issue-to-branch.yml` | Issue labeled with `gitops-push` | Parses issue form body, calls `POST /push/sync`, comments PR link back on the issue |
 
-All workflows use **concurrency groups** to cancel duplicate runs for the same branch or issue.
+All workflows use **concurrency groups** to cancel duplicate runs for the same branch or issue. All jobs have `timeout-minutes` set to prevent silent runner-minute drain.
 
 ### Auto-merge gates (all must pass)
 1. Code Review workflow concluded with `success` (not errored/cancelled)
@@ -231,6 +243,17 @@ A `.github/dependabot.yml` is included and runs weekly PRs for:
 
 No configuration required; it activates automatically once the file is present in the default branch.
 
+## Observability
+
+All HTTP requests are logged as structured JSON with a unique `x-request-id` correlation ID:
+
+```json
+{"reqId":"uuid","method":"POST","path":"/push/sync","ip":"...","event":"request"}
+{"reqId":"uuid","method":"POST","path":"/push/sync","ip":"...","event":"response","status":200,"ms":312}
+```
+
+Callers can pass their own `x-request-id` header and it will be echoed back in the response for end-to-end tracing.
+
 ## Environment Variables
 
 | Variable | Required | Default | Description |
@@ -240,6 +263,8 @@ No configuration required; it activates automatically once the file is present i
 | `GH_OWNER` | ✅ | — | GitHub org or username |
 | `GH_REPO` | ✅ | — | Target repository name |
 | `PUSH_QUEUE_CONCURRENCY` | — | `5` | Max parallel push operations |
+| `PUSH_QUEUE_MAX_DEPTH` | — | `50` | Max queued requests waiting for a slot — returns 503 if exceeded |
 | `PORT` | — | `3000` | Server port |
 | `INCOMING_DIR` | — | `/mnt/incoming` | Allowed root for `dir` values. Any `dir` outside this path is rejected (path traversal protection) |
-| `GH_API_TIMEOUT_MS` | — | `30000` | Timeout in ms for GitHub API calls |
+| `GH_API_TIMEOUT_MS` | — | `30000` | Timeout in ms for GitHub API calls (service + code-review agent) |
+| `LLM_TIMEOUT_MS` | — | `120000` | Timeout in ms for OpenRouter LLM calls in the code-review agent |

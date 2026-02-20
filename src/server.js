@@ -4,9 +4,14 @@ const path = require('path');
 const express = require('express');
 const helmet = require('helmet');
 const { auth } = require('./middleware/auth');
+const { requestLogger } = require('./middleware/logger');
 const { createFeatBranch } = require('./github/create-feat-branch');
 const { ensureProject } = require('./github/ensure-project');
 const { enqueue, stats } = require('./queue/push-queue');
+
+const { version: PKG_VERSION } = require('../package.json');
+const STARTED_AT = Date.now();
+const PROJECT_RE = /^[a-zA-Z0-9_-]+$/;
 
 // Fail fast — catch misconfiguration before accepting any traffic
 const REQUIRED_ENV = ['API_KEY', 'GH_TOKEN', 'GH_OWNER', 'GH_REPO'];
@@ -42,6 +47,7 @@ function validateDir(dir) {
 const app = express();
 
 app.use(helmet());
+app.use(requestLogger);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.text({ type: 'text/plain', limit: '10mb' }));
 app.use((req, res, next) => {
@@ -53,7 +59,13 @@ app.use((req, res, next) => {
 
 // GET /ping - health check
 app.get('/ping', (req, res) => {
-  res.json({ ok: true, queue: stats() });
+  res.json({
+    ok: true,
+    version: PKG_VERSION,
+    node: process.version,
+    uptime_s: Math.floor((Date.now() - STARTED_AT) / 1000),
+    queue: stats(),
+  });
 });
 
 // All routes below require x-api-key auth
@@ -84,6 +96,9 @@ app.post('/push', async (req, res) => {
   if (!project || typeof project !== 'string') {
     return res.status(400).json({ error: 'project is required and must be a string' });
   }
+  if (!PROJECT_RE.test(project)) {
+    return res.status(400).json({ error: `Invalid project name "${project}". Use only letters, numbers, hyphens, underscores.` });
+  }
   if (!dir || typeof dir !== 'string') {
     return res.status(400).json({ error: 'dir is required and must be a string (absolute path to directory)' });
   }
@@ -95,15 +110,20 @@ app.post('/push', async (req, res) => {
     return res.status(400).json({ error: err.message });
   }
 
-  res.status(202).json({ ok: true, message: 'Push queued' });
-
-  enqueue(async () => {
-    const result = await createFeatBranch({ project, dir: safeDir, description, feat_name, labels: labels || [], source });
-    console.log(`[push] ${result.project} PR #${result.pr_number} created: ${result.pr_url}`);
-    return result;
-  }).catch(err => {
-    console.error(`[push] Failed: ${err.message}`);
-  });
+  try {
+    enqueue(async () => {
+      const result = await createFeatBranch({ project, dir: safeDir, description, feat_name, labels: labels || [], source });
+      req.log.info('push complete', { project, pr: result.pr_number, url: result.pr_url });
+      return result;
+    }).catch(err => {
+      req.log.error('push failed', { project, error: err.message });
+    });
+    res.status(202).json({ ok: true, message: 'Push queued' });
+  } catch (err) {
+    const status = err.status || 500;
+    req.log.warn('push rejected', { reason: err.message });
+    res.status(status).json({ error: err.message });
+  }
 });
 
 /**
@@ -120,6 +140,9 @@ app.post('/push/sync', async (req, res) => {
   if (!project || typeof project !== 'string') {
     return res.status(400).json({ error: 'project is required and must be a string' });
   }
+  if (!PROJECT_RE.test(project)) {
+    return res.status(400).json({ error: `Invalid project name "${project}". Use only letters, numbers, hyphens, underscores.` });
+  }
   if (!dir || typeof dir !== 'string') {
     return res.status(400).json({ error: 'dir is required and must be a string (absolute path to directory)' });
   }
@@ -135,10 +158,12 @@ app.post('/push/sync', async (req, res) => {
     const result = await enqueue(() =>
       createFeatBranch({ project, dir: safeDir, description, feat_name, labels: labels || [], source })
     );
+    req.log.info('push/sync complete', { project, pr: result.pr_number, url: result.pr_url });
     res.json(result);
   } catch (err) {
-    console.error(`[push/sync] Error: ${err.message}`);
-    res.status(500).json({ error: err.message });
+    const status = err.status || 500;
+    req.log.error('push/sync failed', { project, error: err.message });
+    res.status(status).json({ error: err.message });
   }
 });
 

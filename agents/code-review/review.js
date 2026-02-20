@@ -32,6 +32,14 @@ const {
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const GH_API = 'https://api.github.com';
 const MAX_DIFF_CHARS = 24000;
+const GH_TIMEOUT_MS = parseInt(process.env.GH_API_TIMEOUT_MS || '30000', 10);
+const LLM_TIMEOUT_MS = parseInt(process.env.LLM_TIMEOUT_MS || '120000', 10);
+
+function withTimeout(ms) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return { signal: controller.signal, clear: () => clearTimeout(timer) };
+}
 
 function ghHeaders() {
   return {
@@ -43,19 +51,31 @@ function ghHeaders() {
 }
 
 async function fetchDiff() {
-  const res = await fetch(`${GH_API}/repos/${GH_REPO_FULL}/pulls/${PR_NUMBER}`, {
-    headers: { ...ghHeaders(), Accept: 'application/vnd.github.v3.diff' },
-  });
-  if (!res.ok) throw new Error(`Failed to fetch PR diff: ${res.status} ${await res.text()}`);
-  return res.text();
+  const { signal, clear } = withTimeout(GH_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${GH_API}/repos/${GH_REPO_FULL}/pulls/${PR_NUMBER}`, {
+      headers: { ...ghHeaders(), Accept: 'application/vnd.github.v3.diff' },
+      signal,
+    });
+    if (!res.ok) throw new Error(`Failed to fetch PR diff: ${res.status} ${await res.text()}`);
+    return res.text();
+  } finally {
+    clear();
+  }
 }
 
 async function fetchPrMeta() {
-  const res = await fetch(`${GH_API}/repos/${GH_REPO_FULL}/pulls/${PR_NUMBER}`, {
-    headers: ghHeaders(),
-  });
-  if (!res.ok) throw new Error(`Failed to fetch PR meta: ${res.status}`);
-  return res.json();
+  const { signal, clear } = withTimeout(GH_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${GH_API}/repos/${GH_REPO_FULL}/pulls/${PR_NUMBER}`, {
+      headers: ghHeaders(),
+      signal,
+    });
+    if (!res.ok) throw new Error(`Failed to fetch PR meta: ${res.status}`);
+    return res.json();
+  } finally {
+    clear();
+  }
 }
 
 async function callLlm(systemPrompt, diff) {
@@ -70,23 +90,30 @@ async function callLlm(systemPrompt, diff) {
     ? `Please review the following pull request diff:\n\n\`\`\`diff\n${truncated}${truncationNote}\n\`\`\``
     : 'The diff is empty — no code changes detected.';
 
-  const res = await fetch(OPENROUTER_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': `https://github.com/${GH_REPO_FULL}`,
-      'X-Title': 'gitops-service code-review-agent',
-    },
-    body: JSON.stringify({
-      model: REVIEW_MODEL,
-      max_tokens: 2048,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage },
-      ],
-    }),
-  });
+  const { signal, clear } = withTimeout(LLM_TIMEOUT_MS);
+  let res;
+  try {
+    res = await fetch(OPENROUTER_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': `https://github.com/${GH_REPO_FULL}`,
+        'X-Title': 'gitops-service code-review-agent',
+      },
+      body: JSON.stringify({
+        model: REVIEW_MODEL,
+        max_tokens: 2048,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMessage },
+        ],
+      }),
+      signal,
+    });
+  } finally {
+    clear();
+  }
 
   if (!res.ok) throw new Error(`OpenRouter error: ${res.status} ${await res.text()}`);
   const data = await res.json();

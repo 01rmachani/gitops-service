@@ -89,6 +89,52 @@ describe('readDirFiles', () => {
   });
 });
 
+describe('push-queue max depth (backpressure)', () => {
+  it('rejects with 503-tagged error when queue is full', async () => {
+    // Fill the queue beyond MAX_QUEUE_DEPTH by using tasks that never resolve
+    // We test the rejection logic directly via makeValidateDir-style inline helper
+    const CONCURRENCY = 5;
+    const MAX_DEPTH = 2;
+
+    // Inline queue factory so we can control MAX_QUEUE_DEPTH without env mutation
+    function makeQueue(concurrency, maxDepth) {
+      let active = 0;
+      const waiting = [];
+      function drain() {
+        while (active < concurrency && waiting.length > 0) {
+          const { task, resolve, reject } = waiting.shift();
+          active++;
+          task().then(resolve).catch(reject).finally(() => { active--; drain(); });
+        }
+      }
+      function enqueue(task) {
+        if (waiting.length >= maxDepth) {
+          const err = Object.assign(
+            new Error(`Queue full (depth=${maxDepth}). Retry later.`),
+            { status: 503 }
+          );
+          return Promise.reject(err);
+        }
+        return new Promise((resolve, reject) => {
+          waiting.push({ task, resolve, reject });
+          drain();
+        });
+      }
+      return { enqueue };
+    }
+
+    const q = makeQueue(CONCURRENCY, MAX_DEPTH);
+    // Fill concurrency slots + queue depth
+    const neverResolve = () => new Promise(() => {});
+    for (let i = 0; i < CONCURRENCY + MAX_DEPTH; i++) q.enqueue(neverResolve);
+
+    // Next enqueue should be rejected with status 503
+    const err = await q.enqueue(neverResolve).catch(e => e);
+    assert.equal(err.status, 503);
+    assert.match(err.message, /Queue full/);
+  });
+});
+
 describe('validateDir (path traversal protection)', () => {
   const validateDir = makeValidateDir('/mnt/incoming');
 

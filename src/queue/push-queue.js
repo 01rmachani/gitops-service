@@ -7,6 +7,7 @@
  */
 
 const CONCURRENCY = parseInt(process.env.PUSH_QUEUE_CONCURRENCY || '5', 10);
+const MAX_QUEUE_DEPTH = parseInt(process.env.PUSH_QUEUE_MAX_DEPTH || '50', 10);
 
 let active = 0;
 const waiting = [];
@@ -15,10 +16,19 @@ const waiting = [];
  * Enqueue a task function. Returns a Promise that resolves/rejects
  * with the task's result once a concurrency slot is available.
  *
+ * Throws a 503-tagged error if the queue is full (backpressure).
+ *
  * @param {() => Promise<any>} task - Async function to run
  * @returns {Promise<any>}
  */
 function enqueue(task) {
+  if (waiting.length >= MAX_QUEUE_DEPTH) {
+    const err = Object.assign(
+      new Error(`Queue full (depth=${MAX_QUEUE_DEPTH}). Retry later.`),
+      { status: 503 }
+    );
+    return Promise.reject(err);
+  }
   return new Promise((resolve, reject) => {
     waiting.push({ task, resolve, reject });
     drain();

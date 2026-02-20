@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>gitops-service</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{--bg:#080b11;--surface:#0d1117;--surface2:#161b22;--border:#21262d;--accent:#58a6ff;--green:#3fb950;--orange:#f78166;--purple:#a78bfa;--text:#e6edf3;--muted:#8b949e;--mono:'JetBrains Mono',monospace;--sans:'Inter',sans-serif}
+    html{scroll-behavior:smooth;scroll-snap-type:y mandatory}
+    body{background:var(--bg);color:var(--text);font-family:var(--sans);overflow-x:hidden}
+    ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:var(--bg)}::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+    .sidenav{position:fixed;right:20px;top:50%;transform:translateY(-50%);z-index:100;display:flex;flex-direction:column;gap:10px}
+    .sidenav a{display:block;width:6px;height:6px;border-radius:50%;background:var(--border);border:1px solid var(--muted);transition:all .25s;text-decoration:none}
+    .sidenav a.active,.sidenav a:hover{background:var(--accent);border-color:var(--accent);box-shadow:0 0 8px var(--accent)}
+    section{min-height:100vh;scroll-snap-align:start;display:flex;align-items:center;justify-content:center;padding:60px 48px;position:relative;overflow:hidden}
+    section::before{content:'';position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(rgba(88,166,255,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(88,166,255,.03) 1px,transparent 1px);background-size:40px 40px}
+    .si{max-width:1100px;width:100%;position:relative;z-index:1}
+    .lbl{font-family:var(--mono);font-size:11px;letter-spacing:.15em;text-transform:uppercase;color:var(--accent);margin-bottom:12px;display:flex;align-items:center;gap:8px}
+    .lbl::before{content:'';display:block;width:24px;height:1px;background:var(--accent)}
+    h2{font-size:clamp(26px,3.5vw,40px);font-weight:700;line-height:1.15;margin-bottom:8px}
+    h3{font-size:16px;font-weight:600;margin-bottom:10px;color:var(--text)}
+    p{color:var(--muted);line-height:1.7;font-size:14px}
+    .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:22px 26px}
+    pre{background:#010409;border:1px solid var(--border);border-radius:8px;padding:18px 22px;overflow-x:auto;font-family:var(--mono);font-size:12.5px;line-height:1.65;color:#c9d1d9}
+    code{font-family:var(--mono);font-size:12px;background:rgba(88,166,255,.1);color:var(--accent);padding:2px 7px;border-radius:4px}
+    pre code{background:none;color:inherit;padding:0;font-size:inherit}
+    .kw{color:#ff7b72}.str{color:#a5d6ff}.cmt{color:#484f58}.key{color:#79c0ff}.val{color:#a5d6ff}.pth{color:#3fb950}
+    .badge{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;font-weight:500;padding:3px 10px;border-radius:20px;border:1px solid}
+    .bb{color:var(--accent);border-color:rgba(88,166,255,.3);background:rgba(88,166,255,.08)}
+    .bg2{color:var(--green);border-color:rgba(63,185,80,.3);background:rgba(63,185,80,.08)}
+    .bp{color:var(--purple);border-color:rgba(167,139,250,.3);background:rgba(167,139,250,.08)}
+    .bo{color:var(--orange);border-color:rgba(247,129,102,.3);background:rgba(247,129,102,.08)}
+    .steps{display:flex;flex-direction:column;gap:14px}
+    .step{display:flex;gap:14px;align-items:flex-start}
+    .sn{flex-shrink:0;width:26px;height:26px;border-radius:50%;background:rgba(88,166,255,.12);border:1px solid rgba(88,166,255,.3);color:var(--accent);font-family:var(--mono);font-size:11px;display:flex;align-items:center;justify-content:center}
+    .sb{padding-top:3px}.sb strong{color:var(--text);font-size:13px;display:block;margin-bottom:2px}.sb p{font-size:13px}
+    .gate-list{display:flex;flex-direction:column;gap:8px}
+    .gate{display:flex;align-items:center;gap:12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:11px 15px;font-size:13px;color:var(--muted)}
+    .wf-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+    .wf-card{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:18px}
+    .wf-card .wi{font-size:20px;margin-bottom:8px}
+    .wf-card h4{font-size:12px;font-family:var(--mono);color:var(--accent);margin-bottom:5px}
+    .wf-card p{font-size:13px}
+    .ep-list{display:flex;flex-direction:column;gap:10px}
+    .ep{display:flex;align-items:flex-start;gap:12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:13px 16px}
+    .epm{font-family:var(--mono);font-size:10px;font-weight:600;padding:3px 7px;border-radius:4px;flex-shrink:0;margin-top:2px}
+    .epm.get{background:rgba(63,185,80,.15);color:var(--green)}.epm.post{background:rgba(88,166,255,.15);color:var(--accent)}
+    .ep-path{font-family:var(--mono);font-size:13px;color:var(--text)}.ep-desc{font-size:12px;color:var(--muted);margin-top:2px}
+    .two{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+    .gapmd{display:flex;flex-direction:column;gap:20px}.gapsm{display:flex;flex-direction:column;gap:14px}
+    .divider{height:1px;background:var(--border);margin:18px 0}
+    #hero{background:var(--bg)}
+    .hero-grid{display:grid;grid-template-columns:1fr 400px;gap:64px;align-items:center}
+    .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);display:flex;align-items:center;gap:8px;margin-bottom:18px}
+    .eyebrow .dot{width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green);animation:pulse 2s ease-in-out infinite}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+    .hero-title{font-size:clamp(34px,4.5vw,54px);font-weight:700;line-height:1.1;letter-spacing:-.02em;margin-bottom:18px}
+    .hero-title .ac{color:var(--accent)}
+    .hero-desc{font-size:15px;color:var(--muted);line-height:1.8;margin-bottom:28px;max-width:500px}
+    .hero-tags{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:32px}
+    .hero-cta{display:flex;gap:12px;flex-wrap:wrap}
+    .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 20px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;text-decoration:none;transition:all .2s;border:1px solid transparent}
+    .btn-p{background:var(--accent);color:#0d1117;border-color:var(--accent)}.btn-p:hover{background:#79c0ff}
+    .btn-g{background:transparent;color:var(--text);border-color:var(--border)}.btn-g:hover{border-color:var(--accent);color:var(--accent)}
+    .vwrap{position:relative;border-radius:12px;overflow:hidden;border:1px solid var(--border);box-shadow:0 0 0 1px rgba(88,166,255,.06),0 20px 60px rgba(0,0,0,.7);background:var(--surface);aspect-ratio:16/10}
+    .vchrome{position:absolute;top:0;left:0;right:0;height:32px;background:#161b22;border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 12px;gap:6px;z-index:2}
+    .cd{width:10px;height:10px;border-radius:50%}.cd.r{background:#ff5f57}.cd.y{background:#febc2e}.cd.g{background:#28c840}
+    .ctitle{font-family:var(--mono);font-size:10px;color:var(--muted);margin:0 auto}
+    .vbody{position:absolute;inset:0;top:32px}
+    .vbody video{width:100%;height:100%;object-fit:cover;display:block}
+    .vph{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:linear-gradient(135deg,#0d1117 0%,#0d1520 100%)}
+    .playbtn{width:48px;height:48px;border-radius:50%;background:rgba(88,166,255,.12);border:1px solid rgba(88,166,255,.3);display:flex;align-items:center;justify-content:center;color:var(--accent);font-size:18px;cursor:pointer;transition:all .2s}
+    .playbtn:hover{background:rgba(88,166,255,.22);box-shadow:0 0 20px rgba(88,166,255,.25)}
+    .vph p{font-size:11px;color:var(--muted);font-family:var(--mono)}
+    .vglow{position:absolute;bottom:-30px;left:50%;transform:translateX(-50%);width:70%;height:60px;background:radial-gradient(ellipse,rgba(88,166,255,.12) 0%,transparent 70%);pointer-events:none}
+    .blob{position:absolute;border-radius:50%;pointer-events:none;filter:blur(80px);opacity:.4}
+    .bblue{background:rgba(88,166,255,.25)}.bpurple{background:rgba(124,58,237,.2)}
+    #branch-model{background:var(--bg)}#flow{background:var(--surface)}#api{background:var(--bg)}#workflows{background:var(--surface)}#setup{background:var(--bg)}
+  </style>
+</head>
+<body>
+  <nav class="sidenav">
+    <a href="#hero"></a><a href="#branch-model"></a><a href="#flow"></a>
+    <a href="#api"></a><a href="#workflows"></a><a href="#setup"></a>
+  </nav>
+
+  <!-- HERO -->
+  <section id="hero">
+    <div class="blob bblue"   style="width:500px;height:500px;top:-100px;left:-150px"></div>
+    <div class="blob bpurple" style="width:400px;height:400px;bottom:-80px;right:100px"></div>
+    <div class="si">
+      <div class="hero-grid">
+        <div>
+          <div class="eyebrow"><span class="dot"></span>Express &middot; GitHub API &middot; Docker</div>
+          <h1 class="hero-title">Autonomous<br><span class="ac">GitOps</span><br>Pipeline</h1>
+          <p class="hero-desc">A standalone service that manages a single GitHub repo with multiple projects. Push code over HTTP — it creates feature branches, opens PRs, and triggers per-project CI, AI code review, and auto-merge.</p>
+          <div class="hero-tags">
+            <span class="badge bb">Node.js</span>
+            <span class="badge bg2">GitHub Actions</span>
+            <span class="badge bp">AI Code Review</span>
+            <span class="badge bo">Auto-merge</span>
+          </div>
+          <div class="hero-cta">
+            <a href="#flow" class="btn btn-p">See the Flow &darr;</a>
+            <a href="https://github.com/01rmachani/gitops-service" target="_blank" class="btn btn-g">GitHub &rarr;</a>
+          </div>
+        </div>
+        <div style="position:relative">
+          <div class="vwrap">
+            <div class="vchrome">
+              <span class="cd r"></span><span class="cd y"></span><span class="cd g"></span>
+              <span class="ctitle">gitops-service &mdash; demo</span>
+            </div>
+            <div class="vbody">
+              <video id="demo-video" loop muted playsinline style="display:none"></video>
+              <div class="vph" id="vph">
+                <div class="playbtn" id="playbtn">&#9654;</div>
+                <p>video coming soon</p>
+              </div>
+            </div>
+          </div>
+          <div class="vglow"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- BRANCH MODEL -->
+  <section id="branch-model">
+    <div class="blob bblue" style="width:350px;height:350px;top:10%;right:-80px"></div>
+    <div class="si">
+      <div class="lbl">Branch Model</div>
+      <h2>One repo. Infinite projects.</h2>
+      <p style="margin-bottom:32px;max-width:560px">Each project gets its own isolated branch hierarchy, auto-bootstrapped on first push. No manual setup required.</p>
+      <div class="two" style="align-items:start">
+        <div class="gapsm">
+          <pre><code>main                     <span class="cmt"># service code only</span>
+&#x251C;&#x2500;&#x2500; proj-a-master        <span class="cmt"># auto-bootstrapped</span>
+&#x2502;   &#x2514;&#x2500;&#x2500; proj-a-dev       <span class="cmt"># PR target</span>
+&#x2502;       &#x2514;&#x2500;&#x2500; feat/add-auth
+&#x251C;&#x2500;&#x2500; proj-b-master
+&#x2502;   &#x2514;&#x2500;&#x2500; proj-b-dev
+&#x2502;       &#x2514;&#x2500;&#x2500; feat/fix-bug</code></pre>
+          <div class="card" style="padding:14px 18px"><p style="font-size:13px"><code>main</code> only ever holds gitops-service code. Project code lives entirely in its own branch subtree &mdash; fully isolated.</p></div>
+        </div>
+        <div class="steps">
+          <div class="step"><div class="sn">1</div><div class="sb"><strong>Bootstrap master</strong><p>Creates <code>{project}-master</code> from <code>main</code> with CI + review workflows committed.</p></div></div>
+          <div class="step"><div class="sn">2</div><div class="sb"><strong>Create dev branch</strong><p>Creates <code>{project}-dev</code> from <code>{project}-master</code> as the integration target.</p></div></div>
+          <div class="step"><div class="sn">3</div><div class="sb"><strong>Feature branch per push</strong><p>Each <code>POST /push</code> creates <code>feat/&lt;name|uuid&gt;</code> from <code>{project}-dev</code>.</p></div></div>
+          <div class="step"><div class="sn">4</div><div class="sb"><strong>PR opened automatically</strong><p>Files committed and a PR opened targeting <code>{project}-dev</code>.</p></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FLOW -->
+  <section id="flow">
+    <div class="blob bpurple" style="width:400px;height:400px;bottom:-60px;left:-100px"></div>
+    <div class="si">
+      <div class="lbl">End-to-End Flow</div>
+      <h2>Push code. Get a merged PR.</h2>
+      <p style="margin-bottom:32px;max-width:560px">From a single HTTP call to a merged, AI-reviewed pull request &mdash; fully automated.</p>
+      <div class="two" style="align-items:start">
+        <pre style="font-size:12px"><code><span class="kw">POST</span> <span class="pth">/push/sync</span>
+  &#x2502;
+  &#x251C;&#x2500; ensureProject(project)
+  &#x2502;    &#x251C;&#x2500; <span class="cmt">create {project}-master (if new)</span>
+  &#x2502;    &#x251C;&#x2500; <span class="cmt">bootstrap .github/workflows/</span>
+  &#x2502;    &#x2514;&#x2500; <span class="cmt">create {project}-dev (if new)</span>
+  &#x2502;
+  &#x251C;&#x2500; create <span class="pth">feat/&lt;name|uuid&gt;</span> from dev
+  &#x251C;&#x2500; push files from <span class="str">dir/</span>
+  &#x2514;&#x2500; open PR &#x2192; <span class="pth">{project}-dev</span>
+       &#x2502;
+       <span class="cmt">GitHub Actions on {project}-master:</span>
+       &#x251C;&#x2500; <span class="key">ci.yml</span>          <span class="cmt">&#x2192; run tests</span>
+       &#x251C;&#x2500; <span class="key">code-review.yml</span> <span class="cmt">&#x2192; LLM diff review</span>
+       &#x2514;&#x2500; <span class="key">auto-merge.yml</span>  <span class="cmt">&#x2192; squash &amp; merge</span></code></pre>
+        <div class="gapsm">
+          <div class="card" style="border-color:rgba(63,185,80,.2);background:rgba(63,185,80,.04)">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><span style="font-size:18px">&#x26A1;</span><h3 style="margin:0">Async or Sync</h3></div>
+            <p style="font-size:13px"><code>POST /push</code> returns 202 immediately. <code>POST /push/sync</code> waits and returns the PR URL. Both use the same concurrency-capped queue.</p>
+          </div>
+          <div class="card" style="border-color:rgba(167,139,250,.2);background:rgba(167,139,250,.04)">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><span style="font-size:18px">&#x1F916;</span><h3 style="margin:0">AI Code Review</h3></div>
+            <p style="font-size:13px">After CI passes, an LLM agent reviews the diff via OpenRouter and posts a structured comment. Outcome drives the auto-merge decision.</p>
+          </div>
+          <div class="card" style="border-color:rgba(88,166,255,.2);background:rgba(88,166,255,.04)">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><span style="font-size:18px">&#x1F512;</span><h3 style="margin:0">Path Traversal Protection</h3></div>
+            <p style="font-size:13px">Every <code>dir</code> is validated to be inside <code>INCOMING_DIR</code> before any file is read. Traversal attempts return 400.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- API -->
+  <section id="api">
+    <div class="blob bblue" style="width:300px;height:300px;top:5%;left:-60px"></div>
+    <div class="si">
+      <div class="lbl">REST API</div>
+      <h2>Simple HTTP interface.</h2>
+      <p style="margin-bottom:32px;max-width:560px">All routes except <code>GET /ping</code> require an <code>x-api-key</code> header.</p>
+      <div class="two" style="align-items:start;gap:28px">
+        <div class="gapsm">
+          <div class="ep-list">
+            <div class="ep"><span class="epm get">GET</span><div><div class="ep-path">/ping</div><div class="ep-desc">Health check. Returns queue stats (active, queued, concurrency).</div></div></div>
+            <div class="ep"><span class="epm post">POST</span><div><div class="ep-path">/push</div><div class="ep-desc">Fire-and-forget. Returns 202 immediately; branch + PR created in background.</div></div></div>
+            <div class="ep"><span class="epm post">POST</span><div><div class="ep-path">/push/sync</div><div class="ep-desc">Waits for branch + PR creation. Returns full result including PR URL.</div></div></div>
+            <div class="ep"><span class="epm post">POST</span><div><div class="ep-path">/projects/:project/bootstrap</div><div class="ep-desc">Manually trigger project bootstrap (idempotent).</div></div></div>
+          </div>
+        </div>
+        <div class="gapsm">
+          <p style="font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)">Request body</p>
+          <pre><code>{
+  <span class="key">"project"</span>:     <span class="str">"proj-a"</span>,
+  <span class="key">"dir"</span>:         <span class="str">"/mnt/incoming/proj-a/out"</span>,
+  <span class="key">"description"</span>: <span class="str">"Add auth module"</span>,
+  <span class="key">"feat_name"</span>:   <span class="str">"add-auth"</span>,
+  <span class="key">"labels"</span>:      [<span class="str">"backend"</span>],
+  <span class="key">"source"</span>:      <span class="str">"my-service"</span>
+}</code></pre>
+          <p style="font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)">Response</p>
+          <pre><code>{
+  <span class="key">"project"</span>:   <span class="str">"proj-a"</span>,
+  <span class="key">"branch"</span>:    <span class="str">"feat/add-auth"</span>,
+  <span class="key">"pr_number"</span>: <span class="val">42</span>,
+  <span class="key">"pr_url"</span>:    <span class="str">"https://github.com/..."</span>
+}</code></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- WORKFLOWS -->
+  <section id="workflows">
+    <div class="blob bpurple" style="width:350px;height:350px;top:-60px;right:-80px"></div>
+    <div class="si">
+      <div class="lbl">GitHub Actions</div>
+      <h2>Four workflows. Zero manual steps.</h2>
+      <p style="margin-bottom:32px;max-width:560px">Bootstrapped into every project branch automatically. Each has concurrency groups to cancel duplicate runs.</p>
+      <div class="gapmd">
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:14px">
+          <div class="wf-card"><div class="wi">&#x1F9EA;</div><h4>ci.yml</h4><p>Runs project tests on every PR push. Must complete with <code>success</code> before code-review triggers.</p></div>
+          <div class="wf-card"><div class="wi">&#x1F916;</div><h4>code-review.yml</h4><p>Triggers after CI passes (<code>conclusion == 'success'</code>). LLM reviews the diff via OpenRouter and posts a structured comment.</p></div>
+          <div class="wf-card"><div class="wi">&#x1F504;</div><h4>feat-auto-merge.yml</h4><p>Triggers after code-review succeeds. Squash-merges if all gates pass, otherwise labels PR for human review with a reason comment.</p></div>
+          <div class="wf-card"><div class="wi">&#x1F4DD;</div><h4>issue-to-branch.yml</h4><p>Triggered by the <code>gitops-push</code> label on any issue. Parses the issue form body, calls <code>POST /push/sync</code>, and comments the PR link back.</p></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+          <div class="card">
+            <h3 style="margin-bottom:14px">Auto-merge Gates <span style="font-size:11px;font-family:var(--mono);color:var(--muted);font-weight:400">(all must pass)</span></h3>
+            <div class="gate-list">
+              <div class="gate"><span class="gate-icon">&#x2705;</span>Code Review workflow concluded with <code>success</code></div>
+              <div class="gate"><span class="gate-icon">&#x2705;</span>All CI checks green (no failure / cancelled / timed_out)</div>
+              <div class="gate"><span class="gate-icon">&#x2705;</span>No <code>human-review-required</code> label on the PR</div>
+              <div class="gate"><span class="gate-icon">&#x2705;</span>Repo variable <code>AUTO_MERGE</code> is not <code>false</code></div>
+              <div class="gate"><span class="gate-icon">&#x2705;</span>PR is <code>MERGEABLE</code> (no conflicts)</div>
+            </div>
+          </div>
+          <div class="card" style="border-color:rgba(63,185,80,.2);background:rgba(63,185,80,.04)">
+            <h3 style="margin-bottom:12px">Concurrency &amp; Dependabot</h3>
+            <p style="font-size:13px;margin-bottom:12px">Every workflow has a <strong style="color:var(--text)">concurrency group</strong> scoped to branch or issue number — duplicate runs are cancelled automatically.</p>
+            <div class="divider"></div>
+            <p style="font-size:13px;margin-top:12px"><strong style="color:var(--text)">Dependabot</strong> runs weekly PRs for both <code>npm</code> and <code>github-actions</code> versions. Zero configuration needed.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SETUP -->
+  <section id="setup">
+    <div class="blob bblue" style="width:300px;height:300px;bottom:0;right:-60px"></div>
+    <div class="si">
+      <div class="lbl">Setup Guide</div>
+      <h2>Running in minutes.</h2>
+      <p style="margin-bottom:32px;max-width:560px">Docker Compose is the recommended deployment. The service runs as a non-root user with a read-only volume mount.</p>
+      <div class="two" style="align-items:start;gap:28px">
+        <div class="gapsm">
+          <div class="card" style="padding:16px 20px">
+            <h3 style="margin-bottom:10px;font-size:14px">1 &mdash; Clone &amp; configure</h3>
+            <pre style="font-size:12px"><code><span class="kw">git</span> clone https://github.com/01rmachani/gitops-service
+<span class="kw">cp</span> .env.example .env
+<span class="cmt"># fill in GH_TOKEN, GH_OWNER, GH_REPO, API_KEY</span></code></pre>
+          </div>
+          <div class="card" style="padding:16px 20px">
+            <h3 style="margin-bottom:10px;font-size:14px">2 &mdash; Run with Docker</h3>
+            <pre style="font-size:12px"><code><span class="kw">docker</span> compose up -d --build</code></pre>
+          </div>
+          <div class="card" style="padding:16px 20px">
+            <h3 style="margin-bottom:10px;font-size:14px">3 &mdash; Push your first branch</h3>
+            <pre style="font-size:12px"><code><span class="kw">curl</span> -X POST http://localhost:3000/push/sync \
+  -H <span class="str">"x-api-key: YOUR_KEY"</span> \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d <span class="str">'{"project":"demo","dir":"/mnt/incoming/demo"}'</span></code></pre>
+          </div>
+        </div>
+        <div class="gapsm">
+          <div class="card">
+            <h3 style="margin-bottom:14px">Required env vars</h3>
+            <div class="gate-list">
+              <div class="gate"><span class="gate-icon">&#x1F511;</span><code>GH_TOKEN</code> &mdash; GitHub PAT with repo scope</div>
+              <div class="gate"><span class="gate-icon">&#x1F4E6;</span><code>GH_OWNER</code> / <code>GH_REPO</code> &mdash; target repository</div>
+              <div class="gate"><span class="gate-icon">&#x1F510;</span><code>API_KEY</code> &mdash; shared secret for HTTP auth</div>
+              <div class="gate"><span class="gate-icon">&#x1F4C1;</span><code>INCOMING_DIR</code> &mdash; host dir mounted read-only</div>
+            </div>
+          </div>
+          <div class="card" style="padding:16px 20px">
+            <h3 style="margin-bottom:10px;font-size:14px">4 &mdash; Create GitHub labels</h3>
+            <pre style="font-size:11.5px"><code><span class="kw">gh</span> label create <span class="str">"automated"</span>              --color <span class="str">"0075ca"</span>
+<span class="kw">gh</span> label create <span class="str">"human-review-required"</span> --color <span class="str">"e4e669"</span>
+<span class="kw">gh</span> label create <span class="str">"gitops-push"</span>            --color <span class="str">"5319e7"</span></code></pre>
+            <p style="font-size:12px;margin-top:8px"><code>gitops-push</code> triggers the issue-to-branch workflow.</p>
+          </div>
+          <div class="card">
+            <h3 style="margin-bottom:14px">GitHub repo secrets</h3>
+            <div class="gate-list">
+              <div class="gate"><span class="gate-icon">&#x1F916;</span><code>OPENROUTER_API_KEY</code> &mdash; for AI code review</div>
+              <div class="gate"><span class="gate-icon">&#x1F517;</span><code>GITOPS_API_KEY</code> &mdash; for issue-to-branch workflow</div>
+            </div>
+            <div class="divider"></div>
+            <h3 style="margin-bottom:10px">Repo variables</h3>
+            <div class="gate-list">
+              <div class="gate"><span class="gate-icon">&#x2699;&#xFE0F;</span><code>AUTO_MERGE=false</code> &mdash; disable auto-merge</div>
+              <div class="gate"><span class="gate-icon">&#x1F9E0;</span><code>REVIEW_MODEL</code> &mdash; override LLM model</div>
+              <div class="gate"><span class="gate-icon">&#x1F310;</span><code>GITOPS_URL</code> &mdash; service base URL for issue-to-branch</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <script>
+    // Nav dot active state
+    const sections = document.querySelectorAll('section');
+    const dots = document.querySelectorAll('.sidenav a');
+    const io = new IntersectionObserver(entries => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          const id = e.target.id;
+          dots.forEach((d, i) => {
+            const ids = ['hero','branch-model','flow','api','workflows','setup'];
+            d.classList.toggle('active', ids[i] === id);
+          });
+        }
+      });
+    }, { threshold: 0.5 });
+    sections.forEach(s => io.observe(s));
+
+    // Smooth scroll on nav click
+    dots.forEach((d, i) => {
+      const ids = ['hero','branch-model','flow','api','workflows','setup'];
+      d.addEventListener('click', e => {
+        e.preventDefault();
+        document.getElementById(ids[i]).scrollIntoView({ behavior: 'smooth' });
+      });
+    });
+
+    // Video: set src and show player when available
+    const VIDEO_SRC = ''; // paste URL here when ready
+    const video = document.getElementById('demo-video');
+    const placeholder = document.getElementById('vph');
+    const playBtn = document.getElementById('playbtn');
+
+    if (VIDEO_SRC) {
+      video.src = VIDEO_SRC;
+      video.style.display = 'block';
+      placeholder.style.display = 'none';
+    } else {
+      playBtn.addEventListener('click', () => {
+        playBtn.style.opacity = '0.4';
+        playBtn.style.pointerEvents = 'none';
+      });
+    }
+  </script>
+</body>
+</html>

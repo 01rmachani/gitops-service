@@ -121,14 +121,48 @@ Workflows are bootstrapped onto `{project}-master` and trigger on PRs from `feat
 | Workflow | Trigger | Purpose |
 |---|---|---|
 | `ci.yml` | PR opened/updated | Runs project tests |
-| `code-review.yml` | After CI completes | LLM reviews diff via `.github/scripts/review.js`, posts comment |
-| `feat-auto-merge.yml` | After code review completes | Squash-merges if all gates pass, else labels PR |
+| `code-review.yml` | After CI completes (`conclusion == 'success'`) | LLM reviews diff via `.github/scripts/review.js`, posts comment |
+| `feat-auto-merge.yml` | After code review completes (`conclusion == 'success'`) | Squash-merges if all gates pass, else labels PR |
+| `issue-to-branch.yml` | Issue labeled with `gitops-push` | Parses issue form body, calls `POST /push/sync`, comments PR link back on the issue |
+
+All workflows use **concurrency groups** to cancel duplicate runs for the same branch or issue.
 
 ### Auto-merge gates (all must pass)
-1. CI checks green
-2. No `human-review-required` label (code review approved)
-3. `AUTO_MERGE` repo variable is not `false`
-4. PR is `MERGEABLE` (no conflicts)
+1. Code Review workflow concluded with `success` (not errored/cancelled)
+2. All CI checks green (no `failure`, `cancelled`, or `timed_out` conclusions)
+3. No `human-review-required` label on the PR
+4. `AUTO_MERGE` repo variable is not `false`
+5. PR is `MERGEABLE` (no conflicts)
+
+### Issue-to-branch workflow
+
+Add the `gitops-push` label to any issue whose body follows this form structure:
+
+```
+### Project
+proj-a
+
+### Feature Name
+add-auth
+
+### Source Directory
+/mnt/incoming/proj-a/output
+
+### Description
+Add authentication module
+
+### Extra Labels (optional)
+backend, security
+```
+
+The workflow parses the body, calls `POST /push/sync` on your gitops-service instance, and comments the resulting PR link back on the issue.
+
+**Required repo secrets/variables for this workflow:**
+
+| Name | Type | Description |
+|---|---|---|
+| `GITOPS_URL` | Variable | Base URL of your gitops-service, e.g. `http://my-server:3000` |
+| `GITOPS_API_KEY` | Secret | The `API_KEY` value from your gitops-service `.env` |
 
 ### Per-project workflow customisation
 
@@ -161,16 +195,21 @@ cp .env.example .env
 
 **Secrets** (Settings → Secrets → Actions):
 - `OPENROUTER_API_KEY` — OpenRouter API key for the code review agent
+- `GITOPS_API_KEY` — API key for `issue-to-branch.yml` to call your gitops-service instance
 
 **Variables** (Settings → Variables → Actions):
 - `AUTO_MERGE` — set to `false` to disable auto-merge globally (default: enabled)
 - `REVIEW_MODEL` — LLM model override (default: `anthropic/claude-3.5-haiku`)
+- `GITOPS_URL` — base URL of your gitops-service instance (required for `issue-to-branch.yml`)
 
 ### 3. Create labels
 ```bash
 gh label create "automated"              --color "0075ca" --repo owner/repo
 gh label create "human-review-required" --color "e4e669" --repo owner/repo
+gh label create "gitops-push"            --color "5319e7" --repo owner/repo
 ```
+
+The `gitops-push` label is required to trigger the `issue-to-branch.yml` workflow.
 
 ### 4. Run with Docker (recommended)
 ```bash
@@ -183,6 +222,14 @@ docker compose up -d --build
 npm start        # production
 npm run dev      # development (nodemon)
 ```
+
+## Dependabot
+
+A `.github/dependabot.yml` is included and runs weekly PRs for:
+- **npm** — keeps Node.js dependencies up to date
+- **github-actions** — keeps action versions pinned to latest
+
+No configuration required; it activates automatically once the file is present in the default branch.
 
 ## Environment Variables
 
